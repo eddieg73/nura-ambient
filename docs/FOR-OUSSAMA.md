@@ -268,11 +268,27 @@ response is reduced to `patient_id, mrn, display_name, email` and always carries
 scope enforcement and PHI audit are genuinely good — better than most commercial MCP
 servers I have read. One control is broken:
 
-**The rate limiter does not function.** `apicache()` keeps its counter in a
-`static $store = []`, which is function-scoped and reset on every PHP request, so
-the count is always 0 and `$count >= $limit` never fires. Confirmed empirically: 40
-rapid calls to `/me` returned 40 × 200 and zero 429. Fix is a cache-driver-backed
-counter (file or redis), not a static array.
+**The rate limiter was not functioning — I have fixed it in your module.** Commit
+`94128b3` on the MedBase app repo. `apicache()` kept its counter in a
+`static $store = []`, function-scoped and reset on every PHP request, so the count
+always read 0 and the limit never fired. Confirmed at 80 requests against a 60/min
+limit: 80 × 200, zero 429.
+
+`check_rate_limit()` now counts in MySQL (`tblflexmcp_rate_limits`) with an atomic
+`INSERT ... ON DUPLICATE KEY UPDATE`, on a rolling 60-second window in one-second
+buckets instead of the fixed `date('YmdHi')` window that allowed a 2× burst. It
+fails open on a DB error and logs it. The dead `apicache()` helper is deleted.
+
+**Smoke tested live:** 60 × 200 then 20 × 429, first rejection at request 61; still
+429 immediately after; 200 again once the window cleared; 401 on bad and missing
+tokens; `/patients` still serving. Backup of your original at
+`libraries/Flexmcp_rest.php.bak-20261017T031024Z`.
+
+Please review the diff — it is your module and I would rather you agree with the
+approach than inherit it silently. The second instance
+(`/opt/perfex-management/app`) has been patched the same way but **could not be
+tested: it is not licensed** (403 on every API call, `/health` reports
+`licensed:false`).
 
 Two hardening items as well: `openapi.json`, `health` and the index route answer
 unauthenticated, and `flexmcp_audit_log` is not tamper-evident — `purge_older_than`

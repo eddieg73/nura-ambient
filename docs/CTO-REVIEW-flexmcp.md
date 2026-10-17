@@ -4,9 +4,14 @@
 **Live endpoint:** `https://nura.nuratech.ai/flexmcp/api/mcp` — serverInfo `medbase-crm` v1.0.1, protocol `2024-11-05`, 46 tools
 **Reviewer:** Hermes (CTO). Author of the module: Oussama Benakka.
 
-Verdict: **the hard parts are right and one control is broken.** The auth model,
-scope enforcement and PHI audit are better than most commercial MCP servers I have
-read. The rate limiter does not work at all.
+Verdict: **the hard parts are right and one control was broken — now fixed and
+smoke tested.** The auth model, scope enforcement and PHI audit are better than most
+commercial MCP servers I have read.
+
+**Status update 2026-10-17:** the rate limiter has been repaired and verified on the
+clinical instance. See section 2 for the fix and the smoke-test evidence. The two
+hardening items (unauthenticated `openapi`/`health`, non-tamper-evident audit trail)
+remain open.
 
 ---
 
@@ -40,7 +45,7 @@ No session can be established unauthenticated.
 
 ---
 
-## CRITICAL — the rate limiter does not work
+## CRITICAL (FIXED 2026-10-17) — the rate limiter could never fire
 
 ```php
 private function check_rate_limit($record)
@@ -67,15 +72,64 @@ if (!function_exists('apicache')) {
 starts with an empty array, so `$count` always reads `0`, always increments to `1`,
 and `$count >= $limit` is never true for any sane limit. The limiter cannot fire.
 
-**Verified empirically, not just by reading:** 40 rapid sequential calls to
-`/flexmcp/api/v1/me` with a valid key returned **40 × HTTP 200, zero 429**.
+**Verified empirically, not just by reading.** My first attempt used 40 calls and
+proved nothing: the configured limit is 60/min, so 40 was *under* the threshold. The
+conclusive test was 80 calls — **80 × HTTP 200, zero 429**, against a limit of 60.
+Worth stating plainly, because a test that cannot fail is not evidence.
 
 Why this matters: `flexmcp` is the MCP surface for a clinical ERP. Any holder of a
 key - including a leaked one, or a compromised agent - can issue unbounded requests.
 There is no throttle anywhere in the request path, and the `rate_limit` column in
 `flexmcp_api_keys` creates the *appearance* of a control in the admin UI.
 
-### Fix
+### FIX APPLIED — commit `94128b3` on the MedBase app repo
+
+`check_rate_limit()` now counts in MySQL (`tblflexmcp_rate_limits`), which survives
+the request, survives a restart, and is atomic across PHP workers:
+
+```sql
+INSERT INTO tblflexmcp_rate_limits (api_key_id, bucket, hits) VALUES (?, ?, 1)
+  ON DUPLICATE KEY UPDATE hits = hits + 1;
+
+SELECT COALESCE(SUM(hits),0) FROM tblflexmcp_rate_limits
+ WHERE api_key_id = ? AND bucket > ?   -- now - 60
+```
+
+Three deliberate choices:
+
+- **Rolling window, not `date('YmdHi')`.** The old fixed window let a caller spend
+  the full budget at 12:00:59 and again at 12:01:00 for a 2x burst. Counting
+  one-second buckets and summing the last 60 removes that.
+- **Fails OPEN on a database error, and logs it.** A limiter that locks out every
+  legitimate caller because of an unrelated database hiccup is a worse outage than
+  the one it prevents.
+- **The dead `apicache()` helper is deleted**, so nobody re-uses it by accident.
+
+### Smoke test on the live clinical instance
+
+| Test | Expected | Result |
+|---|---|---|
+| 80 requests vs a 60/min limit | 60 allowed, then 429s | **60 x 200, 20 x 429** |
+| Position of first rejection | request 61 | **request 61** |
+| Immediately after being limited | still 429 | **429** |
+| 62 s later | 200, no permanent lockout | **200** |
+| 5 ordinary calls | all 200 | **5 x 200** |
+| Bad token / no token | 401, not counted | **401 / 401** |
+| `/patients` read still works | 200 with data | **success:true** |
+| Counter table actually writing | rows present | **30 buckets, 88 hits** |
+
+Before the fix, the identical 80-request test returned **80 x 200 and zero 429**.
+
+### Applying it to the second instance
+
+`/opt/perfex-management/app` carries the same defective code and has been patched
+the same way (its own `tblflexmcp_rate_limits` created). **It could not be smoke
+tested because that deployment is not licensed** — every API call returns
+`403 {"error":"Flex MCP license is not activated"}`, and its `/health` reports
+`licensed:false`. The patch there is correct-by-construction but unproven until that
+instance is licensed.
+
+### Historical detail — why the original code looked plausible
 
 Back the counter with something request-surviving. Perfex already ships a cache
 driver; the smallest correct change is:
@@ -163,9 +217,9 @@ should be enforced by a documented policy with a chained deletion marker, not a 
 | MCP transport authentication | Good |
 | PHI audit content (hash not payload) | Good |
 | `/me` permissions leak | **Fixed since my last review** |
-| **Rate limiting** | **Broken - does not function** |
+| **Rate limiting** | **Fixed 2026-10-17 - verified 60/20 split + recovery** |
 | Unauthenticated `openapi` / `health` / `index` | Needs auth |
 | Audit trail tamper-evidence | Missing; `phi_audit` already has the pattern |
 
-One broken control, two hardening gaps, and a genuinely solid foundation. The rate
-limiter is the one I would fix before anything else touches this API.
+The broken control is fixed and proven. Two hardening gaps remain, and the
+foundation is solid.
