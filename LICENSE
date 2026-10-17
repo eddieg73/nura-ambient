@@ -1,0 +1,32 @@
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   Copyright 2026 Garrido Group LLC / NURATECH
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+   ----------------------------------------------------------------------
+
+   THIRD-PARTY NOTICES
+
+   This product derives its interface contract from BasedHardware/omi
+   (MIT License, Copyright (c) 2024 Based Hardware Contributors).
+
+   No source file from that project is copied into this repository. The MCP
+   tool names, input field shapes, category vocabularies, route paths and the
+   fail-closed category behaviour are derived from the observed contract.
+   OMI's own client remains MIT-licensed and unmodified.
+
+   MIT and Apache-2.0 are compatible; MIT imposes only attribution, which is
+   recorded in NOTICE.

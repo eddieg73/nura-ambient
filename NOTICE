@@ -1,0 +1,18 @@
+nura-ambient
+Copyright (c) 2026 Garrido Group LLC / NURATECH
+
+This product derives its interface contract from BasedHardware/omi:
+
+    BasedHardware/omi
+    MIT License, Copyright (c) 2024 Based Hardware Contributors
+    https://github.com/BasedHardware/omi
+
+What is derived: the MCP tool names and input field shapes, the memory and
+conversation category vocabularies, the /v1/mcp and /v1/stt route paths, and
+the designed behaviour of failing closed on unknown categories.
+
+What is NOT derived: no source file from BasedHardware/omi is copied into this
+repository. The implementation here is independent and written against the
+observed contract. OMI's client remains MIT and unmodified.
+
+Apache-2.0 is compatible with this arrangement; MIT imposes only attribution.
