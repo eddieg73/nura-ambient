@@ -1,8 +1,10 @@
 # Instructions for Oussama
 
+**To:** Oussama Benakka — oussama@nuratech.ai
 **From:** Eddie / NURATECH
 **Date:** 2026-10-17
-**Repo:** `github.com/eddieg73/nura-ambient`
+**Repo:** `https://github.com/eddieg73/nura-ambient` (public — no invitation needed to read)
+**Instructions:** `https://github.com/eddieg73/nura-ambient/blob/main/docs/FOR-OUSSAMA.md`
 **Subject:** ambient capture backend — what it is, what it is not, and what I need from you
 
 ---
@@ -264,10 +266,19 @@ contract; we do not take their backend. No OMI source is copied into this repo �
 
 ---
 
-## 12. Attribution
+## 12. Access and attribution
+
+The repository is **public**, so the link above opens for you with no invitation and no
+GitHub account:
+
+    https://github.com/eddieg73/nura-ambient
+
+Read access needs nothing. **Push access needs your GitHub username** — GitHub's API
+cannot invite a collaborator by email address, so send the username to eg@nuratech.ai and
+it will be added. Do not assume the email alone grants write access; it does not.
 
 IP owner: Eddie Garrido / Garrido Group LLC.
-Implementation and integration: Oussama Benakka.
+Implementation and integration: Oussama Benakka — oussama@nuratech.ai.
 
 Questions to Eddie directly. If something in this document is wrong, tell me and I will
 correct it rather than have you work around it.
