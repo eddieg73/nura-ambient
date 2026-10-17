@@ -24,5 +24,10 @@ class Settings:
     llm_base_url: str = os.getenv("NURA_AMBIENT_LLM_BASE_URL", "")
     llm_model: str = os.getenv("NURA_AMBIENT_LLM_MODEL", "")
 
+    # MedBase MCP (read-only attribution). Empty base_url = feature disabled,
+    # and the attribution route reports 503 rather than pretending it worked.
+    medbase_url: str = os.getenv("NURA_AMBIENT_MEDBASE_URL", "")
+    medbase_token: str = os.getenv("NURA_AMBIENT_MEDBASE_TOKEN", "")
+
 
 settings = Settings()

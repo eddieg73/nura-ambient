@@ -4,9 +4,11 @@ Ambient capture and memory backend for NURA wearables. A self-hosted replacement
 for the OMI cloud pipeline: the device and client stay OMI's (MIT); the server is
 ours, running on our own metal.
 
-**Status: scaffold with a working contract surface.** 13/13 tests pass. The 8-route
-OMI-compatible facade is implemented over SQLite with a stub transcriber. Whisper
-and Qdrant are wired but not yet provisioned. Nothing here is deployed.
+**Status: working contract surface, plus a live MedBase read-only integration.**
+28/28 tests pass. The 8-route OMI-compatible facade is implemented over SQLite with
+a stub transcriber. MedBase attribution is wired and verified against the live MCP
+(endpoint, 46 tools). Whisper and Qdrant are wired but not yet provisioned. Nothing
+here is deployed.
 
 ## Why this exists
 
@@ -51,6 +53,7 @@ GET    /v1/mcp/conversations/search  query limit start_date end_date
 GET    /v1/mcp/conversations/{id}    (returns transcript segments)
 POST   /v1/mcp/conversations         title category segments[]   <- ingest
 POST   /v1/stt/transcribe            raw audio body             <- Whisper lands here
+POST   /v1/attribution/suggest       query | conversation_id    <- MedBase, read-only
 ```
 
 All routes except `/health` require `Authorization: Bearer <key>`.
@@ -95,6 +98,47 @@ PYTHONPATH=src NURA_AMBIENT_API_KEYS=dev-key \
 | `NURA_AMBIENT_STT` | `stub` | `stub` or `whisper` |
 | `NURA_AMBIENT_LLM_BASE_URL` | unset | OpenAI-compatible endpoint (DeepSeek or local medical model) |
 | `NURA_AMBIENT_LLM_MODEL` | unset | Model id for that endpoint |
+| `NURA_AMBIENT_MEDBASE_URL` | unset | MedBase MCP base (feature off when empty) |
+| `NURA_AMBIENT_MEDBASE_TOKEN` | unset | `fmp_` key — read-only routes only |
+
+## MedBase integration — read only, enforced in code
+
+`src/nura_ambient/medbase.py` is a client for Oussama's `flexmcp` MCP inside MedBase
+(`medbase-crm` v1.0.1, protocol `2024-11-05`, 46 tools).
+
+It exists for **attribution**: a recording is worthless until someone can say which
+patient it belongs to.
+
+```
+POST /v1/attribution/suggest      {query?, conversation_id?, limit}
+```
+
+**The write boundary is mechanical, not documented.** `MedBaseClient.call()` refuses
+any tool outside `READ_ONLY_TOOLS` *before it builds a request*, so this service
+cannot write to MedBase even if misconfigured:
+
+```
+READ-ONLY (8)   search_patients  list_patients  get_patient  get_patient_by_mrn
+                get_patient_summary  list_patient_records
+                get_patient_portal_access  search_crm
+
+REFUSED (38)    create_patient  update_patient  add_note  create_reminder
+                create_payment  reply_ticket  ... and everything else
+```
+
+Two behaviours that matter:
+
+- Attribution always returns `requires_confirmation: true` and never associates a
+  recording with a patient. MedBase makes that call.
+- A transport failure returns **502**, never an empty candidate list. "No match
+  found" and "MedBase is down" are different claims and must not look the same.
+
+Candidates are reduced to `patient_id, mrn, display_name, email` — no date of birth,
+address or phone, because attribution does not need them and the response may be
+logged.
+
+Verified live: write tools blocked, `search_patients` returns candidates, and the
+reduced field set holds.
 
 ## Roadmap
 

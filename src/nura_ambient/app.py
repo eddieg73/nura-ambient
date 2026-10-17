@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .config import settings
+from .medbase import MedBaseClient, MedBaseUnavailable, MedBaseWriteBlocked, suggest_attribution
 from .store import Store
 from .stt import get_transcriber
 
@@ -77,6 +78,15 @@ class SegmentBody(BaseModel):
     is_user: bool = False
     start: float | None = None
     end: float | None = None
+
+
+class AttributionQuery(BaseModel):
+    query: str | None = Field(
+        default=None,
+        description="Text to match against MedBase patients. If omitted, derived from the conversation.",
+    )
+    conversation_id: str | None = None
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 class CreateConversationBody(BaseModel):
@@ -180,6 +190,45 @@ def create_app(db_path: str | None = None) -> FastAPI:
         return store.create_conversation(
             body.title, body.category, [s.model_dump() for s in body.segments]
         )
+
+    # ------------------------------------------------------------ attribution
+    # READ-ONLY. This route exists so a recording can be matched to a patient.
+    # It never writes to MedBase: the client refuses any tool outside its
+    # read-only allowlist, so the boundary is enforced in code, not in a doc.
+    @app.post("/v1/attribution/suggest")
+    def attribution_suggest(body: AttributionQuery, _: str = Depends(require_key)) -> dict:
+        if not settings.medbase_url or not settings.medbase_token:
+            raise HTTPException(
+                status_code=503,
+                detail="MedBase not configured (set NURA_AMBIENT_MEDBASE_URL and NURA_AMBIENT_MEDBASE_TOKEN)",
+            )
+        # If a conversation_id is supplied, make sure it exists before spending
+        # a call on MedBase - a typo should not read as "no patient found".
+        if body.conversation_id and store.get_conversation(body.conversation_id) is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+
+        query = body.query
+        if not query and body.conversation_id:
+            conv = store.get_conversation(body.conversation_id) or {}
+            query = conv.get("title") or ""
+            if not query:
+                segs = conv.get("segments") or []
+                query = " ".join(s.get("text", "") for s in segs[:3]).strip()
+        if not query:
+            raise HTTPException(status_code=422, detail="provide query or a conversation with text")
+
+        client = MedBaseClient(settings.medbase_url, settings.medbase_token)
+        try:
+            out = suggest_attribution(client, query, limit=body.limit)
+        except MedBaseWriteBlocked as e:
+            raise HTTPException(status_code=500, detail=str(e)) from None
+        except MedBaseUnavailable as e:
+            # Fail loudly. An empty candidate list would read as "no match for
+            # this patient", which is a materially different and dangerous claim.
+            raise HTTPException(status_code=502, detail=f"MedBase unavailable: {e}") from None
+
+        out["conversation_id"] = body.conversation_id
+        return out
 
     # ------------------------------------------------------------ audio in
     @app.post("/v1/stt/transcribe")

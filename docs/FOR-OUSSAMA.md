@@ -252,6 +252,33 @@ your box and your call, but check it — it is a silent failure.
 
 ---
 
+## 10b. The wiring is done — and I reviewed your MCP
+
+`src/nura_ambient/medbase.py` now talks to your `flexmcp` MCP. It is **read-only by
+construction**: the client refuses any tool outside an 8-name allowlist before it
+builds a request, so ambient cannot write to MedBase even if someone misconfigures
+it. Verified against the live endpoint — `create_patient`, `add_note` and
+`create_payment` all blocked; `search_patients` returns candidates.
+
+It is used for attribution only: which patient does this recording belong to. The
+response is reduced to `patient_id, mrn, display_name, email` and always carries
+`requires_confirmation: true`. MedBase makes the association, not us.
+
+**Full review in `docs/CTO-REVIEW-flexmcp.md`.** Short version: the key hashing,
+scope enforcement and PHI audit are genuinely good — better than most commercial MCP
+servers I have read. One control is broken:
+
+**The rate limiter does not function.** `apicache()` keeps its counter in a
+`static $store = []`, which is function-scoped and reset on every PHP request, so
+the count is always 0 and `$count >= $limit` never fires. Confirmed empirically: 40
+rapid calls to `/me` returned 40 × 200 and zero 429. Fix is a cache-driver-backed
+counter (file or redis), not a static array.
+
+Two hardening items as well: `openapi.json`, `health` and the index route answer
+unauthenticated, and `flexmcp_audit_log` is not tamper-evident — `purge_older_than`
+deletes rows with no chained marker, while `phi_audit` already does chaining
+correctly one module over.
+
 ## 11. Reference
 
 - `README.md` — what the service is
